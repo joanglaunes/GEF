@@ -118,3 +118,75 @@ def load(fname='store.pckl'):
     obj = pickle.load(f)
     f.close()
     return obj
+    
+def gauss(sigma):
+    def f(u):
+        return np.exp(-u**2/sigma**2)
+    return f
+    
+def exp_div_free_curl_free():
+    def KernelMatrix_divfreeGauss(x,y,sigma):
+        d = x.shape[1]
+        x, y = x[:,None,:], y[None,:,:]
+        xmy = x-y
+        Dxy = np.linalg.norm(xmy, axis=2)
+        Dxy = Dxy[...,None,None]
+        K = gauss(sigma)(Dxy)
+        K = K*(xmy[...,None]@xmy[...,None,:]+(sigma**2/2-Dxy**2)*np.eye(d)[None,None,...])
+        return K
+
+    def KernelMatrix_curlfreeGauss(x,y,sigma):
+        d = x.shape[1]
+        x, y = x[:,None,:], y[None,:,:]
+        xmy = x-y
+        Dxy = np.linalg.norm(xmy, axis=2)
+        Dxy = Dxy[...,None,None]
+        K = gauss(sigma)(Dxy)
+        K = K*(-xmy[...,None]@xmy[...,None,:]+(sigma**2/2)*np.eye(d)[None,None,...])
+        return K
+
+    def Interp_noscalarkernel(x,y,c,sigma,Kernelfun):
+        n,d = y.shape
+        Kyy = Kernelfun(y,y,sigma)
+        Kyy = Kyy.transpose((0,2,1,3)).reshape((n*d,n*d))
+        a = np.linalg.solve(Kyy,c.flatten()).reshape((n,d))
+        m = x.shape[0]
+        Kxy = Kernelfun(x,y,sigma).transpose((0,2,1,3)).reshape((m*d,n*d))
+        return (Kxy @ a.flatten()).reshape((m,d))
+
+    def InterpGrid2D_noscalarkernel(X1,X2,y,c,sigma,Kernelfun) :
+        p,q = X1.shape
+        x = np.concatenate((np.reshape(X1,(p*q,1)),np.reshape(X2,(p*q,1))),axis=1)
+        vx = Interp_noscalarkernel(x,y,c,sigma,Kernelfun)
+        V1 = np.reshape(vx[:,0],(p,q))
+        V2 = np.reshape(vx[:,1],(p,q))
+        return V1, V2
+
+    sigma = .5
+
+    n = 5
+    d = 2
+    m = 2
+    np.random.seed(2)
+    y = np.random.rand(n,d)
+    gamma = np.random.randn(n,m)
+    gamma /= np.linalg.norm(gamma,axis=1,keepdims=True)
+
+    ng = 20
+    t = np.linspace(0,1,ng)
+    dt = 1/(ng-1)
+    X1, X2 = np.meshgrid(t,t)
+
+    V1, V2 = InterpGrid2D_noscalarkernel(X1,X2,y,gamma,sigma,KernelMatrix_divfreeGauss)
+    plt.figure(figsize=(12,5))
+    plt.subplot(1,2,1)
+    plt.title("interpolation, champ à divergence nulle, sigma="+str(sigma))
+    plt.quiver(X1,X2,V1,V2,color='b')
+    plt.quiver(y[:,0],y[:,1],gamma[:,0],gamma[:,1])
+
+    V1, V2 = InterpGrid2D_noscalarkernel(X1,X2,y,gamma,sigma,KernelMatrix_curlfreeGauss)
+    plt.subplot(1,2,2)
+    plt.title("interpolation, champ à rotationnel nul, sigma="+str(sigma))
+    plt.quiver(X1,X2,V1,V2,color='b')
+    plt.quiver(y[:,0],y[:,1],gamma[:,0],gamma[:,1])
+    plt.show();
